@@ -11,7 +11,7 @@ from lmdeploy.pytorch_poc.dist_utils import (colwise_parallelize_linear_fn,
                                              rowwise_parallelize_linear_fn)
 from lmdeploy.pytorch_poc.patch.functional import (
     apply_rotary_pos_emb, attention_forward_with_paged_attention)
-from lmdeploy.pytorch_poc.patch.triton_kernels import rms_norm_dynamic_quant, per_token_quant_int8_tri, swiglu_int8_tri, linear_dynamic_quant_int8_tri, silu_elem_mul_tri, per_channel_quant
+from lmdeploy.pytorch_poc.patch.triton_kernels import rms_norm_dynamic_quant, per_token_quant_int8_tri, swiglu_int8_tri, linear_dynamic_quant_int8_tri, silu_elem_mul_tri, per_channel_quant, linear_dynamic_quant_triton_op_fast
 
 
 class LlamaAttention(nn.Module):
@@ -238,9 +238,10 @@ class LlamaDecoderLayer(nn.Module):
             o_proj_weight_quant=self.o_proj_weight_quant,
             o_proj_scale=self.o_proj_scale,
             rotary_emb_fn=_rotary_emb_fn,
+            residual=residual,
         )
 
-        return attn_output, None, past_key_value
+        return attn_output, past_key_value
     
     def mlp_forward(self, hidden_states):
         hidden_states_shape = hidden_states.shape
@@ -252,33 +253,33 @@ class LlamaDecoderLayer(nn.Module):
         hidden_states_quant, rms_scale = rms_norm_dynamic_quant(
             hidden_states, self.post_attention_layernorm.weight, eps)
         
-        if (M <= 32 and ((K <= 8192 and N <= 13824) or
-                        (K <= 5120 and N <= 14336) or (K <= 4096 and N <= 28672))
-                or M <= 64 and ((K <= 8192 and N <= 11008) or
-                                (K <= 5120 and N <= 14336) or
-                                (K <= 4096 and N <= 14336)) or M <= 128 and
-            ((K <= 8192 and N <= 7168) or (K <= 5120 and N <= 13824) or
-            (K <= 4096 and N <= 14336)) or M <= 256 and
-            ((K <= 8192 and N <= 5504) or (K <= 5120 and N <= 7168) or
-            (K <= 4096 and N <= 7168)) or M <= 512 and
-            ((K <= 8192 and N <= 2752) or (K <= 5120 and N <= 3584) or
-            (K <= 4096 and N <= 3584))):
-            out_silu = swiglu_int8_tri(
-                hidden_states_quant, self.gate_proj_weight_quant, 
-                self.up_proj_weight_quant, rms_scale, 
-                self.gate_proj_scale, self.up_proj_scale, eps, 
-                output_dtype=hidden_states.dtype)
-        else:
-            out_gate_proj = linear_dynamic_quant_int8_tri(
-                hidden_states_quant, self.gate_proj_weight_quant, 
-                rms_scale, self.gate_proj_scale, output_dtype=hidden_states.dtype)
-            out_up_proj = linear_dynamic_quant_int8_tri(
-                hidden_states_quant, self.up_proj_weight_quant, 
-                rms_scale, self.up_proj_scale, output_dtype=hidden_states.dtype)
-            out_silu = silu_elem_mul_tri(out_gate_proj, out_up_proj)
+        # if (M <= 32 and ((K <= 8192 and N <= 13824) or
+        #                 (K <= 5120 and N <= 14336) or (K <= 4096 and N <= 28672))
+        #         or M <= 64 and ((K <= 8192 and N <= 11008) or
+        #                         (K <= 5120 and N <= 14336) or
+        #                         (K <= 4096 and N <= 14336)) or M <= 128 and
+        #     ((K <= 8192 and N <= 7168) or (K <= 5120 and N <= 13824) or
+        #     (K <= 4096 and N <= 14336)) or M <= 256 and
+        #     ((K <= 8192 and N <= 5504) or (K <= 5120 and N <= 7168) or
+        #     (K <= 4096 and N <= 7168)) or M <= 512 and
+        #     ((K <= 8192 and N <= 2752) or (K <= 5120 and N <= 3584) or
+        #     (K <= 4096 and N <= 3584))):
+        #     out_silu = swiglu_int8_tri(
+        #         hidden_states_quant, self.gate_proj_weight_quant, 
+        #         self.up_proj_weight_quant, rms_scale, 
+        #         self.gate_proj_scale, self.up_proj_scale, eps, 
+        #         output_dtype=hidden_states.dtype)
+        # else:
+        out_gate_proj = linear_dynamic_quant_triton_op_fast(
+            hidden_states_quant, self.gate_proj_weight_quant, 
+            rms_scale, self.gate_proj_scale, output_dtype=hidden_states.dtype)
+        out_up_proj = linear_dynamic_quant_triton_op_fast(
+            hidden_states_quant, self.up_proj_weight_quant, 
+            rms_scale, self.up_proj_scale, output_dtype=hidden_states.dtype)
+        out_silu = silu_elem_mul_tri(out_gate_proj, out_up_proj)
         
         out_silu_quant, out_silu_scale = per_token_quant_int8_tri(out_silu, eps)
-        out = linear_dynamic_quant_int8_tri(
+        out = linear_dynamic_quant_triton_op_fast(
             out_silu_quant, self.down_proj_weight_quant, out_silu_scale, 
             self.down_proj_scale, hidden_states, output_dtype=hidden_states.dtype)
         out = out.view(hidden_states_shape)

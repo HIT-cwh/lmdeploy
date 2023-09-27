@@ -8,7 +8,7 @@ from torch import distributed as dist
 
 from lmdeploy.pytorch_poc.kernels import (alibi_paged_attention_fwd,
                                           paged_attention_fwd)
-from .triton_kernels import linear_dynamic_quant_int8_tri
+from .triton_kernels import linear_dynamic_quant_int8_tri, linear_dynamic_quant_triton_op_fast, per_token_quant_int8_tri
 
 
 def rotate_half(x: Tensor):
@@ -216,7 +216,9 @@ def attention_forward_with_paged_attention(
         bias_type (str): type of attention bias. support ['default', 'alibi'].
     """
     max_seq_len = position_ids.size(-1)
-    print(hidden_states_quant.shape)
+    dim = hidden_states_quant.shape[-1]
+    hidden_states_shape = hidden_states_quant.shape
+    hidden_states_quant = hidden_states_quant.view(-1, dim)
 
     if qkv_proj is not None:
         assert q_proj_weight_quant is None
@@ -231,17 +233,19 @@ def attention_forward_with_paged_attention(
         # query_states = q_proj(hidden_states)
         # key_states = k_proj(hidden_states)
         # value_states = v_proj(hidden_states)
+        # import pdb;pdb.set_trace()
+        # print(hidden_states_quant.view(-1, dim).shape, q_proj_weight_quant.shape)
 
-        query_states = linear_dynamic_quant_int8_tri(
-            hidden_states_quant.view(bsz * q_len, -1), q_proj_weight_quant, 
+        query_states = linear_dynamic_quant_triton_op_fast(
+            hidden_states_quant, q_proj_weight_quant, 
             rms_scale, q_proj_scale, output_dtype=torch.float16
             )
-        key_states = linear_dynamic_quant_int8_tri(
-            hidden_states_quant.view(bsz * q_len, -1), k_proj_weight_quant, 
+        key_states = linear_dynamic_quant_triton_op_fast(
+            hidden_states_quant, k_proj_weight_quant, 
             rms_scale, k_proj_scale, output_dtype=torch.float16
             )
-        value_states = linear_dynamic_quant_int8_tri(
-            hidden_states_quant.view(bsz * q_len, -1), v_proj_weight_quant, 
+        value_states = linear_dynamic_quant_triton_op_fast(
+            hidden_states_quant, v_proj_weight_quant, 
             rms_scale, v_proj_scale, output_dtype=torch.float16
             )
 
@@ -314,9 +318,10 @@ def attention_forward_with_paged_attention(
     attn_output = attn_output.reshape(-1, hidden_size)
 
     if o_proj_weight_quant is not None:
-        attn_output_quant, attn_output_scale = per_token_quant_int8_tri(attn_output, eps)
-        hidden_states = linear_dynamic_quant_int8_tri(
+        attn_output_quant, attn_output_scale = per_token_quant_int8_tri(attn_output, eps=1e-5)
+        hidden_states = linear_dynamic_quant_triton_op_fast(
             attn_output_quant, o_proj_weight_quant, attn_output_scale, o_proj_scale, 
             residual.view(-1, hidden_size), output_dtype=residual.dtype)
         # attn_output = o_proj(attn_output)
-    return attn_output
+
+    return attn_output.view(hidden_states_shape)

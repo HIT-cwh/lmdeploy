@@ -311,7 +311,7 @@ def parse_args():
 def main():
     import multiprocessing as mp
     args = parse_args()
-    profile_throughput(args.model_path, concurrency=1, input_seqlen=128, output_seqlen=128)
+    # profile_throughput(args.model_path, concurrency=1, input_seqlen=128, output_seqlen=128)
     os.environ['TM_LOG_LEVEL'] = args.log_level
     results: List[ProfileResult] = []
     for batch in tqdm(args.concurrency):
