@@ -8,6 +8,7 @@ from torch import distributed as dist
 
 from lmdeploy.pytorch_poc.kernels import (alibi_paged_attention_fwd,
                                           paged_attention_fwd)
+from .triton_kernels import linear_dynamic_quant_int8_tri
 
 
 def rotate_half(x: Tensor):
@@ -169,7 +170,8 @@ def get_alibi_biases(n_heads: int, mask: torch.Tensor):
 
 @torch.no_grad()
 def attention_forward_with_paged_attention(
-    hidden_states: Tensor,
+    hidden_states_quant: Tensor,
+    rms_scale,
     history_lengths: Sequence,
     block_offsets: Tensor,
     num_heads: int,
@@ -177,13 +179,21 @@ def attention_forward_with_paged_attention(
     head_dim: int,
     position_ids: torch.LongTensor,
     past_key_value: Tuple[Tensor],
-    q_proj: Optional[Callable] = None,
-    k_proj: Optional[Callable] = None,
-    v_proj: Optional[Callable] = None,
+    q_proj_weight_quant: Optional[Callable] = None,
+    q_proj_scale: Optional[Callable] = None,
+    k_proj_weight_quant: Optional[Callable] = None,
+    k_proj_scale: Optional[Callable] = None,
+    v_proj_weight_quant: Optional[Callable] = None,
+    v_proj_scale: Optional[Callable] = None,
+    # k_proj: Optional[Callable] = None,
+    # v_proj: Optional[Callable] = None,
     qkv_proj: Optional[Callable] = None,
-    o_proj: Optional[Callable] = None,
+    # o_proj: Optional[Callable] = None,
+    o_proj_weight_quant: Optional[Callable] = None,
+    o_proj_scale: Optional[Callable] = None,
     rotary_emb_fn: Optional[Callable] = None,
     bias_type: str = 'default',
+    residual: Optional[Callable] = None,
 ) -> Tensor:
     """Attention module forward with paced attention.
 
@@ -206,20 +216,34 @@ def attention_forward_with_paged_attention(
         bias_type (str): type of attention bias. support ['default', 'alibi'].
     """
     max_seq_len = position_ids.size(-1)
+    print(hidden_states_quant.shape)
 
     if qkv_proj is not None:
-        assert q_proj is None
+        assert q_proj_weight_quant is None
         assert k_proj is None
         assert v_proj is None
-        query_states, key_states, value_states = qkv_proj(hidden_states)
+        query_states, key_states, value_states = qkv_proj(hidden_states_quant)
     else:
         assert qkv_proj is None
-        assert q_proj is not None
-        assert k_proj is not None
-        assert v_proj is not None
-        query_states = q_proj(hidden_states)
-        key_states = k_proj(hidden_states)
-        value_states = v_proj(hidden_states)
+        assert q_proj_weight_quant is not None
+        assert k_proj_weight_quant is not None
+        assert v_proj_weight_quant is not None
+        # query_states = q_proj(hidden_states)
+        # key_states = k_proj(hidden_states)
+        # value_states = v_proj(hidden_states)
+
+        query_states = linear_dynamic_quant_int8_tri(
+            hidden_states_quant.view(bsz * q_len, -1), q_proj_weight_quant, 
+            rms_scale, q_proj_scale, output_dtype=torch.float16
+            )
+        key_states = linear_dynamic_quant_int8_tri(
+            hidden_states_quant.view(bsz * q_len, -1), k_proj_weight_quant, 
+            rms_scale, k_proj_scale, output_dtype=torch.float16
+            )
+        value_states = linear_dynamic_quant_int8_tri(
+            hidden_states_quant.view(bsz * q_len, -1), v_proj_weight_quant, 
+            rms_scale, v_proj_scale, output_dtype=torch.float16
+            )
 
     query_states = query_states.view(-1, num_heads, head_dim)
     key_states = key_states.view(-1, num_kv_heads, head_dim)
@@ -289,6 +313,10 @@ def attention_forward_with_paged_attention(
     hidden_size = num_heads * head_dim
     attn_output = attn_output.reshape(-1, hidden_size)
 
-    if o_proj is not None:
-        attn_output = o_proj(attn_output)
+    if o_proj_weight_quant is not None:
+        attn_output_quant, attn_output_scale = per_token_quant_int8_tri(attn_output, eps)
+        hidden_states = linear_dynamic_quant_int8_tri(
+            attn_output_quant, o_proj_weight_quant, attn_output_scale, o_proj_scale, 
+            residual.view(-1, hidden_size), output_dtype=residual.dtype)
+        # attn_output = o_proj(attn_output)
     return attn_output

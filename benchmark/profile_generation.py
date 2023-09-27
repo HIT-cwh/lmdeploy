@@ -79,6 +79,7 @@ def warmup(model,
                                           sampling_param=sampling_param):
                 continue
 
+    _infer(model, 0)
     _start = time.perf_counter()
     procs = []
     for i in range(concurrency):
@@ -106,14 +107,16 @@ def profile_throughput(model_path: str,
                        sampling_param=None):
     from lmdeploy.pytorch_poc.engine import Engine
     from lmdeploy.pytorch_poc.messages import SamplingParam
-    from lmdeploy.turbomind import Tokenizer, TurboMind
-    tokenizer_model_path = osp.join(model_path, 'triton_models', 'tokenizer')
-    if os.path.exists(tokenizer_model_path):
-        tokenizer = Tokenizer(tokenizer_model_path)
-        tm_model = TurboMind(model_path=model_path, tp=tp)
-    else:
-        tokenizer = Tokenizer(model_path)
-        tm_model = Engine(model_path, tp=tp)
+    from transformers import AutoTokenizer
+    # from lmdeploy.turbomind.tokenizer import Tokenizer
+    # tokenizer_model_path = osp.join(model_path, 'triton_models', 'tokenizer')
+    # if os.path.exists(tokenizer_model_path):
+    #     tokenizer = Tokenizer(tokenizer_model_path)
+    #     tm_model = TurboMind(model_path=model_path, tp=tp)
+    # else:
+    tokenizer = AutoTokenizer.from_pretrained(model_path)
+    # tokenizer = Tokenizer(model_path)
+    tm_model = Engine(model_path, tp=tp)
 
     sampling_param = SamplingParam(
         top_k=40,
@@ -285,13 +288,13 @@ def parse_args():
         type=int,
         help='how many requests launched concurrently. One-to-one'
         'correspondence with completion-tokens',
-        default=[64, 512, 512, 1024])
+        default=[64, 128, 256, 512])
     parser.add_argument('--completion-tokens',
                         nargs='+',
                         type=int,
                         help='how many tokens to be generated. One-to-one'
                         'correspondence with prompt-tokens',
-                        default=[512, 512, 1024, 1024])
+                        default=[256, 256, 512, 512])
     parser.add_argument('--tp', type=int, help='Tensor parallel', default=1)
     parser.add_argument('--dst-csv',
                         type=str,
@@ -308,6 +311,7 @@ def parse_args():
 def main():
     import multiprocessing as mp
     args = parse_args()
+    profile_throughput(args.model_path, concurrency=1, input_seqlen=128, output_seqlen=128)
     os.environ['TM_LOG_LEVEL'] = args.log_level
     results: List[ProfileResult] = []
     for batch in tqdm(args.concurrency):

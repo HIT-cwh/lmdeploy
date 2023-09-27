@@ -12,6 +12,8 @@ from torch.distributed._tensor import DeviceMesh
 
 from lmdeploy.pytorch_poc.dist_utils import partition_module, replicate_module
 from lmdeploy.utils import get_logger
+from .llama import LlamaDecoderLayer
+from transformers.models.llama.modeling_llama import LlamaDecoderLayer as HFLlamaDecoderLayer
 
 MODULE_MAP = {
     'transformers.models.llama.modeling_llama.LlamaAttention':
@@ -20,6 +22,10 @@ MODULE_MAP = {
     'lmdeploy.pytorch_poc.patch.llama.LlamaModel',
     'transformers.models.llama.modeling_llama.LlamaMLP':
     'lmdeploy.pytorch_poc.patch.llama.LlamaMLP',
+
+    'transformers.models.llama.modeling_llama.LlamaDecoderLayer':
+    'lmdeploy.pytorch_poc.patch.llama.LlamaDecoderLayer',
+
     'modeling_baichuan.Model':
     'lmdeploy.pytorch_poc.patch.llama.LlamaModel',  # noqa
     'modeling_baichuan.BaichuanModel':
@@ -257,6 +263,14 @@ def _load_state_dict(
     return model
 
 
+def from_torch(module):
+    for name, child in module.named_children():
+        if isinstance(child, HFLlamaDecoderLayer):
+            child.from_torch()
+        else:
+            from_torch(child)
+
+
 def patch(
     model: torch.nn.Module,
     extra_args: Sequence[str] = None,
@@ -306,6 +320,8 @@ def patch(
                     world_size=world_size,
                     device_mesh=device_mesh,
                 )
+    
+    from_torch(model)
 
     _update_model(model)
     extra_args_str = ' '.join(f'{arg}=None,' for arg in extra_args)
