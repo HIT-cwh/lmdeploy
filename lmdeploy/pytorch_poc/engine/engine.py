@@ -416,6 +416,14 @@ class Engine:
 
             self.patched_model = patch(
                 hf_model, ['context', 'use_origin', 'q_seq_info']).cuda()
+            from transformers.models.llama.modeling_llama import LlamaDecoderLayer as HFLlamaDecoderLayer
+            def build_cuda_graph(module):
+                for name, child in module.named_children():
+                    if isinstance(child, HFLlamaDecoderLayer):
+                        child.build_cuda_graph()
+                    else:
+                        build_cuda_graph(child)
+            build_cuda_graph(self.patched_model)
             _update_cache_config(model_config, cache_config)
 
             self.cache_engine = CacheEngine(cache_config, model_config)

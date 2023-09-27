@@ -57,6 +57,7 @@ def infer(model,
             token = tokens[-1] - tokens[0]
         stats.append([first_token_latency, token, token_latency])
     que.put((session_id, stats))
+    chatbot.end(session_id)
 
 
 def warmup(model,
@@ -281,20 +282,20 @@ def parse_args():
                         nargs='+',
                         type=int,
                         help='how many requests launched concurrently',
-                        default=[1, 8, 16, 32])
+                        default=[8, ])
     parser.add_argument(
         '--prompt-tokens',
         nargs='+',
         type=int,
         help='how many requests launched concurrently. One-to-one'
         'correspondence with completion-tokens',
-        default=[64, 128, 256, 512])
+        default=[256])
     parser.add_argument('--completion-tokens',
                         nargs='+',
                         type=int,
                         help='how many tokens to be generated. One-to-one'
                         'correspondence with prompt-tokens',
-                        default=[256, 256, 512, 512])
+                        default=[512, ])
     parser.add_argument('--tp', type=int, help='Tensor parallel', default=1)
     parser.add_argument('--dst-csv',
                         type=str,
