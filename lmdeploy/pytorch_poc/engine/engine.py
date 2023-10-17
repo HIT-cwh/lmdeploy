@@ -11,6 +11,7 @@ from typing import Any, Callable, Dict, List
 
 import torch
 import torch.distributed as dist
+import torch.nn as nn
 from torch import multiprocessing as mp
 from torch.distributed._tensor import DeviceMesh, Replicate, distribute_tensor
 from transformers import AutoConfig, AutoModelForCausalLM
@@ -18,6 +19,8 @@ from transformers.generation.logits_process import (LogitsProcessorList,
                                                     TemperatureLogitsWarper,
                                                     TopKLogitsWarper,
                                                     TopPLogitsWarper)
+from transformers.models.llama.modeling_llama import (LlamaDecoderLayer,
+                                                      LlamaRMSNorm)
 from transformers.utils import WEIGHTS_INDEX_NAME, WEIGHTS_NAME, cached_file
 
 from lmdeploy.pytorch.accel import LoadNoInit
@@ -30,6 +33,7 @@ from lmdeploy.pytorch_poc.paging import Scheduler
 from lmdeploy.pytorch_poc.utils import get_gpu_memory
 from lmdeploy.utils import get_logger
 
+from ..models.llama import QLinear, QRMSNorm
 from .cache_engine import CacheEngine
 
 logger = get_logger('lmdeploy')
@@ -446,6 +450,29 @@ def _start_tp_process(rank: int,
         raise e
 
 
+def replace_rms_and_linear(module):
+    for name, child in module.named_children():
+        if isinstance(child, nn.Linear) and True:
+            new_child = QLinear(child.in_features, child.out_features,
+                                child.bias is not None)
+            new_child.quant(child.weight)
+            setattr(module, name, new_child)
+        elif isinstance(child, LlamaRMSNorm):
+            new_child = QRMSNorm(child.weight.shape[0], child.variance_epsilon)
+            new_child.load_state_dict(child.state_dict())
+            setattr(module, name, new_child)
+        else:
+            replace_rms_and_linear(child)
+
+
+def wrap(module):
+    for child in module.children():
+        if isinstance(child, LlamaDecoderLayer):
+            replace_rms_and_linear(child)
+        else:
+            wrap(child)
+
+
 class Engine:
     """The inference engine of lmdeploy pytorch.
 
@@ -511,6 +538,8 @@ class Engine:
                     torch_dtype=torch_dtype,
                     trust_remote_code=trust_remote_code)
                 hf_model.eval()
+                hf_model.config.use_cache = True
+            wrap(hf_model)
 
             self.patched_model = patch(
                 hf_model, ['context', 'use_origin', 'q_seq_info']).cuda()
