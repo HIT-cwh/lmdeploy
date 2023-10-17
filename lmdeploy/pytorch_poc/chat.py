@@ -4,11 +4,12 @@ import os
 import random
 
 import fire
+# from lmdeploy.turbomind.tokenizer import Tokenizer
+from transformers import AutoTokenizer
 
 from lmdeploy.model import MODELS
 from lmdeploy.pytorch_poc import engine as tm
 from lmdeploy.pytorch_poc.messages import SamplingParam
-from lmdeploy.turbomind.tokenizer import Tokenizer
 
 os.environ['TM_LOG_LEVEL'] = 'ERROR'
 
@@ -52,7 +53,8 @@ def main(
         stream_output (bool): indicator for streaming output or not
     """
     # tokenizer_model_path = osp.join(model_path, 'triton_models', 'tokenizer')
-    tokenizer = Tokenizer(model_path, trust_remote_code)
+    # tokenizer = Tokenizer(model_path, trust_remote_code)
+    tokenizer = AutoTokenizer.from_pretrained(model_path)
     tm_model = tm.Engine(model_path,
                          tp=tp,
                          trust_remote_code=trust_remote_code)
@@ -94,7 +96,7 @@ def main(
             for outputs in generator.stream_infer(
                     session_id=session_id,
                     prompt_token_ids=input_ids,
-                    request_output_len=512,
+                    request_output_len=1024,
                     step=step,
                     sampling_param=sampling_param):
                 status, res, tokens = outputs
