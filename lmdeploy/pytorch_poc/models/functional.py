@@ -9,6 +9,8 @@ from torch import distributed as dist
 from lmdeploy.pytorch_poc.kernels import (alibi_paged_attention_fwd,
                                           fill_kv_cache, paged_attention_fwd)
 
+# from .q_modules import group_wise_fake_quant
+
 
 def rotate_half(x: Tensor):
     """Rotates half the hidden dims of the input."""
@@ -178,6 +180,9 @@ def attention_forward_with_paged_attention(
     if q_start_loc is None:
         q_start_loc = q_seq_length.cumsum(0)
         q_start_loc = torch.cat([q_start_loc.new_zeros(1), q_start_loc[:-1]])
+
+    # key_states = group_wise_fake_quant(key_states, 4)
+    # value_states = group_wise_fake_quant(value_states, 4)
 
     fill_kv_cache(key_states,
                   value_states,
