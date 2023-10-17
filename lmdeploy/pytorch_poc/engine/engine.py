@@ -33,7 +33,7 @@ from lmdeploy.pytorch_poc.paging import Scheduler
 from lmdeploy.pytorch_poc.utils import get_gpu_memory
 from lmdeploy.utils import get_logger
 
-from ..models.llama import QLinear, QRMSNorm
+from ..models import QLinear, QRMSNorm
 from .cache_engine import CacheEngine
 
 logger = get_logger('lmdeploy')
@@ -1101,14 +1101,13 @@ class EngineInstance:
                            dict(session_id=session_id))
             self.owned_sessions.append(session_id)
 
-    def stream_infer(
-            self,
-            session_id: int,
-            prompt_token_ids: List[int] = None,
-            request_output_len: int = None,
-            step: int = 0,
-            sampling_param: SamplingParam = SamplingParam(),
-    ):
+    def stream_infer(self,
+                     session_id: int,
+                     prompt_token_ids: List[int] = None,
+                     request_output_len: int = None,
+                     step: int = 0,
+                     sampling_param: SamplingParam = SamplingParam(),
+                     **kwargs):
         """Send stream inference request.
 
         Args:
