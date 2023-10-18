@@ -84,7 +84,8 @@ class QLinear(nn.Linear):
                                                   self.weight,
                                                   input_scale,
                                                   self.scale,
-                                                  output_dtype=torch.float16)
+                                                  output_dtype=torch.float16,
+                                                  bias=self.bias)
         return out.view(*shape[:-1], -1)
 
 

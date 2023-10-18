@@ -1379,6 +1379,7 @@ def linear_dynamic_quant_triton_op_fast(x,
                                         rms_scale,
                                         linear_scale,
                                         residual=None,
+                                        bias=None,
                                         output_dtype=torch.float16):
     assert x.shape[-1] == b.shape[-1]
     assert b.is_contiguous()
@@ -1428,6 +1429,8 @@ def linear_dynamic_quant_triton_op_fast(x,
                       GROUP_SIZE_M=8,
                       rms_scale_ptr=rms_scale,
                       linear_scale_ptr=linear_scale)
+    if bias is not None:
+        c += bias
 
     return c
 
