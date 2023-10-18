@@ -54,7 +54,8 @@ def main(
     """
     # tokenizer_model_path = osp.join(model_path, 'triton_models', 'tokenizer')
     # tokenizer = Tokenizer(model_path, trust_remote_code)
-    tokenizer = AutoTokenizer.from_pretrained(model_path)
+    tokenizer = AutoTokenizer.from_pretrained(model_path,
+                                              trust_remote_code=True)
     tm_model = tm.Engine(model_path,
                          tp=tp,
                          trust_remote_code=trust_remote_code)
@@ -80,7 +81,7 @@ def main(
                 print('WARNING: exceed session max length.'
                       ' Please end the session.')
                 continue
-            prompt = model.get_prompt(prompt, nth_round == 1)
+            prompt = model.get_prompt(prompt, False)
             input_ids = tokenizer.encode(prompt)
             input_ids = model.update_input_ids(input_ids)
             print(f'{prompt} ', end='', flush=True)
@@ -92,7 +93,7 @@ def main(
                 repetition_penalty=repetition_penalty,
                 ignore_eos=False,
                 random_seed=seed,
-            )
+                stop_words=model.stop_words)
             for outputs in generator.stream_infer(
                     session_id=session_id,
                     prompt_token_ids=input_ids,
