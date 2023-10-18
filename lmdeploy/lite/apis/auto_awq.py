@@ -66,7 +66,7 @@ def auto_awq(model: str,
 
     work_dir = Path(work_dir)
 
-    act_scales = torch.load(work_dir / 'inputs_stats.pth')['absmean']
+    act_scales = torch.load(work_dir / 'inputs_stats.pth')['absmax']
     layers = collect_target_modules(model, layer_type)
     fcs = {}
     for l_name, layer in layers.items():
@@ -74,7 +74,7 @@ def auto_awq(model: str,
         fcs.update(name2fc)
 
     smooth_layers(layers, fc2fcs, norm2fcs, act_scales, w_group_size, device)
-    quant_weights(model, fcs, w_bits, w_sym, w_group_size, device)
+    # quant_weights(model, fcs, w_bits, w_sym, w_group_size, device)
 
     model.save_pretrained(work_dir)
     tokenizer.save_pretrained(work_dir)
