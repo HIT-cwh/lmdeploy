@@ -1653,7 +1653,7 @@ def _rms_norm_fwd_fused_dynamic_symmetric(
 def rms_norm_dynamic_quant(x, w, eps):
     x_arg = x.reshape(-1, x.shape[-1])
     # y = torch.empty_like(x, dtype=torch.float16)
-    y = torch.empty_like(x_arg, dtype=torch.int8)
+    y = torch.empty_like(x, dtype=torch.int8)
     M, K = x_arg.shape
     MAX_FUSED_SIZE = 65536 // x.element_size()
     BLOCK_SIZE = min(MAX_FUSED_SIZE, triton.next_power_of_2(K))
