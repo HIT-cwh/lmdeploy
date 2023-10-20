@@ -450,53 +450,6 @@ def _start_tp_process(rank: int,
         raise e
 
 
-def replace_rms_and_linear(module):
-    for name, child in module.named_children():
-        if isinstance(child, nn.Linear) and True:
-            new_child = QLinear(child.in_features, child.out_features,
-                                child.bias is not None)
-            new_child.quant(child.weight)
-            setattr(module, name, new_child)
-        elif isinstance(child, LlamaRMSNorm):
-            new_child = QRMSNorm(child.weight.shape[0], child.variance_epsilon)
-            new_child.load_state_dict(child.state_dict())
-            setattr(module, name, new_child)
-        else:
-            replace_rms_and_linear(child)
-
-
-def wrap(module):
-    for child in module.children():
-        if isinstance(child, LlamaDecoderLayer):
-            replace_rms_and_linear(child)
-        else:
-            wrap(child)
-
-
-def replace_internlm_rms_and_linear(module):
-    for name, child in module.named_children():
-        if isinstance(child, nn.Linear) and True:
-            new_child = QLinear(child.in_features, child.out_features,
-                                child.bias is not None)
-            new_child.quant(child.weight)
-            new_child.bias = child.bias
-            setattr(module, name, new_child)
-        elif child.__class__.__name__ == 'InternLMRMSNorm':
-            new_child = QRMSNorm(child.weight.shape[0], child.variance_epsilon)
-            new_child.load_state_dict(child.state_dict())
-            setattr(module, name, new_child)
-        else:
-            replace_internlm_rms_and_linear(child)
-
-
-def wrap_internlm(module):
-    for child in module.children():
-        if child.__class__.__name__ == 'InternLMDecoderLayer':
-            replace_internlm_rms_and_linear(child)
-        else:
-            wrap_internlm(child)
-
-
 class Engine:
     """The inference engine of lmdeploy pytorch.
 
@@ -514,7 +467,6 @@ class Engine:
         cache_config: CacheConfig = None,
         tp: int = 1,
         trust_remote_code=True,
-        w8a8=True,
     ) -> None:
 
         self.tp = tp
@@ -579,9 +531,6 @@ class Engine:
                     trust_remote_code=trust_remote_code)
                 hf_model.eval()
                 hf_model.config.use_cache = True
-            if w8a8:
-                # wrap(hf_model)
-                wrap_internlm(hf_model)
 
             self.patched_model = patch(
                 hf_model, ['context', 'use_origin', 'q_seq_info']).cuda()
