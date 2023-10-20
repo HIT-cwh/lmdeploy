@@ -31,6 +31,15 @@ class QRMSNorm(nn.Module):
         self.weight = nn.Parameter(torch.ones(hidden_size))
         self.variance_epsilon = eps
 
+    @classmethod
+    def from_float(cls, mod):
+        hidden_size = mod.weight.shape[0]
+        eps = mod.variance_epsilon
+        q_mod = cls(hidden_size, eps)
+        q_mod.weight = nn.Parameter(mod.weight.detach())
+        q_mod.to('cpu')
+        return q_mod
+
     def forward(self, hidden_states):
         hidden_states_quant, rms_scale = rms_norm_dynamic_quant(
             hidden_states, self.weight, self.variance_epsilon)
@@ -54,18 +63,30 @@ class QLinear(nn.Linear):
             torch.empty((out_features, in_features),
                         device=device,
                         dtype=torch.int8))
-        self.register_buffer('scale', None)
+        self.register_buffer(
+            'scale',
+            torch.empty((out_features, 1), device=device, dtype=torch.float32))
         if bias:
-            self.bias = Parameter(torch.empty(out_features, **factory_kwargs))
+            self.register_buffer('bias',
+                                 torch.empty(out_features, **factory_kwargs))
         else:
             self.register_parameter('bias', None)
 
-    def quant(self, weight):
-        weight_quant, scale = per_channel_quant(weight, 8, 1e-5, torch.int8)
-        self.weight.data = weight_quant
-        self.scale = scale
-        self.fp_weight = weight
-        return
+    @classmethod
+    def from_float(cls, mod):
+        q_mod = cls(mod.in_features,
+                    mod.out_features,
+                    mod.bias is not None,
+                    device=mod.weight.device,
+                    dtype=mod.weight.dtype)
+        weight_quant, scale = per_channel_quant(mod.weight.detach(), 8, 1e-5,
+                                                torch.int8)
+        q_mod.weight = weight_quant
+        q_mod.scale = scale
+        if mod.bias is not None:
+            q_mod.bias = mod.bias.detach()
+        q_mod.to('cpu')
+        return q_mod
 
     def forward(self, input):
         shape = input.shape
