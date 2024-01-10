@@ -4,7 +4,11 @@ from typing import Literal, Optional, Union
 
 from lmdeploy.model import ChatTemplateConfig
 from lmdeploy.pytorch import EngineConfig as PytorchEngineConfig
-from lmdeploy.turbomind import EngineConfig as TurbomindEngineConfig
+
+try:
+    from lmdeploy.turbomind import EngineConfig as TurbomindEngineConfig
+except:
+    TurbomindEngineConfig = None
 
 
 def pipeline(model_path: str,
