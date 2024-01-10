@@ -113,6 +113,7 @@ def warmup(model, concurrency: int, input_ids: List[int], output_seqlen: int,
 def profile_throughput(model_path: str, concurrency: int, input_seqlen: int,
                        output_seqlen: int, tp: int, top_k: int, top_p: float,
                        temperature: float, test_round: int, warmup_round: int,
+                       num_gpu_blocks:int, 
                        **kwargs):
 
     print(f'profiling ... concurrency: {concurrency}, '
@@ -122,7 +123,7 @@ def profile_throughput(model_path: str, concurrency: int, input_seqlen: int,
 
     from lmdeploy.pytorch.engine import Engine, EngineConfig
 
-    tm_model = Engine(model_path, EngineConfig(model_name='llama', tp=tp))
+    tm_model = Engine(model_path, EngineConfig(model_name='llama', tp=tp, num_gpu_blocks=num_gpu_blocks))
 
     # make up a dummy `input_ids` with the length of `input_seqlen` exactly
     assert input_seqlen > 0, 'input_seqlen should > 0'
@@ -336,6 +337,9 @@ def parse_args():
                         type=int,
                         help='number of warmuop rounds',
                         default=1)
+    parser.add_argument('--gpu-blocks',
+                        type=int,
+                        default=0)
     args = parser.parse_args()
     return args
 
@@ -363,7 +367,7 @@ def main():
                                      top_p=args.top_p,
                                      temperature=args.temperature,
                                      test_round=args.test_round,
-                                     warmup_round=args.warmup_round)
+                                     warmup_round=args.warmup_round, num_gpu_blocks=args.gpu_blocks)
             output = Pool(1).map(profile_target, (args.model_path, ))
             model_name, first_token_latency, percentiles, \
                 throughput_per_proc, tp = output[0]
