@@ -5,17 +5,16 @@ from inspect import Parameter, Signature
 from typing import Dict, Sequence
 
 import psutil
-from pynvml import (nvmlDeviceGetHandleByIndex, nvmlDeviceGetMemoryInfo,
-                    nvmlInit)
+import pycuda.driver as drv
 
 
 def get_gpu_memory(id: int = 0) -> int:
     """Returns the free and total physical memory of the GPU in bytes."""
-    nvmlInit()
-    handle = nvmlDeviceGetHandleByIndex(id)
-    mem_info = nvmlDeviceGetMemoryInfo(handle)
-    free = mem_info.free
-    total = mem_info.total
+    drv.init()
+    dev = drv.Device(id)
+    cxt = dev.make_context()
+    free, total = drv.mem_get_info()
+    cxt.pop()
     return free, total
 
 

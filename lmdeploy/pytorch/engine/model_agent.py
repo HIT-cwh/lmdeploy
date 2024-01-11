@@ -27,7 +27,7 @@ _PATCH_ARG_NAMES = ['context', 'use_origin']
 def _update_cache_config(model_config: ModelConfig,
                          cache_config: CacheConfig,
                          gpu_id: int = 0,
-                         gpu_mem_percent: float = 0.7,
+                         gpu_mem_percent: float = 0.6,
                          host_mem_size: int = 4 * (1 << 30)):
     """Update the gpu mem and cpu mem according to model info.
 
